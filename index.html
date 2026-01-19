@@ -3,133 +3,223 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Realistic Breadboard Lab</title>
+    <title>Professional Physics Circuit Lab</title>
     <style>
-        body { font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; background: #2c3e50; color: #ecf0f1; margin: 0; overflow: hidden; }
-        #toolbar { background: #1a252f; padding: 15px; width: 100%; display: flex; gap: 12px; justify-content: center; border-bottom: 4px solid #34495e; z-index: 10; }
-        .tool { padding: 10px 18px; background: #34495e; border: 1px solid #555; color: #fff; cursor: pointer; border-radius: 6px; font-weight: bold; }
-        .tool:hover { background: #1abc9c; }
-        canvas { background: #dcdde1; border-radius: 8px; margin-top: 20px; cursor: crosshair; box-shadow: 0 0 40px rgba(0,0,0,0.5); border: 10px solid #7f8c8d; }
-        #ui-overlay { position: absolute; bottom: 20px; left: 20px; background: rgba(26, 37, 47, 0.95); padding: 15px; border-radius: 10px; border: 2px solid #f1c40f; display: none; }
-        .hint { margin-top: 10px; color: #bdc3c7; font-size: 0.85rem; }
+        body { font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: white; margin: 0; display: flex; flex-direction: column; align-items: center; overflow: hidden; }
+        #toolbar { background: #2c3e50; padding: 15px; width: 100%; display: flex; gap: 10px; justify-content: center; border-bottom: 4px solid #34495e; }
+        .btn { padding: 10px 15px; background: #34495e; border: 1px solid #555; color: white; cursor: pointer; border-radius: 4px; font-weight: bold; }
+        .btn:hover { background: #1abc9c; }
+        #canvas-container { position: relative; margin-top: 20px; }
+        canvas { background: #e0e0e0; border: 10px solid #7f8c8d; border-radius: 8px; cursor: crosshair; }
+        #inspect-panel { position: absolute; top: 80px; right: 20px; background: rgba(0,0,0,0.8); padding: 15px; border-radius: 8px; border: 2px solid #f1c40f; width: 200px; display: none; }
+        .meter-readout { font-family: 'Courier New', monospace; color: #0f0; background: #020; padding: 5px; border-radius: 4px; text-align: center; font-size: 1.2em; margin-top: 5px; }
     </style>
 </head>
 <body>
 
 <div id="toolbar">
-    <button class="tool" onclick="spawn('battery')">🔋 Battery</button>
-    <button class="tool" onclick="spawn('bulb')">💡 Lightbulb</button>
-    <button class="tool" onclick="spawn('wire')">🧵 Jumper Wire</button>
-    <button class="tool" onclick="spawn('switch')">🔌 Toggle Switch</button>
-    <button class="tool" onclick="clearLab()" style="background: #c0392b;">Reset</button>
+    <button class="btn" onclick="spawn('wire')">🧵 Wire</button>
+    <button class="btn" onclick="spawn('battery')">🔋 Battery</button>
+    <button class="btn" onclick="spawn('resistor')">📟 Resistor</button>
+    <button class="btn" onclick="spawn('switch')">🔌 Switch</button>
+    <button class="btn" onclick="spawn('bulb')">💡 Bulb</button>
+    <button class="btn" onclick="clearBoard()" style="background:#c0392b">Reset</button>
 </div>
 
-<canvas id="circuitCanvas" width="950" height="520"></canvas>
-
-<div id="ui-overlay">
-    <strong>9V Battery Settings</strong><br>
-    <label>Voltage: <span id="v-label">9</span>V</label><br>
-    <input type="range" id="v-slider" min="0" max="24" value="9" oninput="updateVoltage(this.value)">
+<div id="canvas-container">
+    <canvas id="labCanvas" width="1000" height="600"></canvas>
+    
+    <div id="inspect-panel">
+        <strong id="item-name">Component</strong>
+        <hr>
+        <div id="battery-ctrl" style="display:none">
+            Voltage: <span id="v-val">9</span>V
+            <input type="range" min="0" max="36" value="9" style="width:100%" oninput="updateProp('v', this.value)">
+        </div>
+        <div id="resistor-ctrl" style="display:none">
+            Resistance: <span id="r-val">10</span>Ω
+            <input type="range" min="1" max="100" value="10" style="width:100%" oninput="updateProp('r', this.value)">
+        </div>
+        <div id="multimeter">
+            <p>Multimeter Readout:</p>
+            <div class="meter-readout" id="m-volt">0.00 V</div>
+            <div class="meter-readout" id="m-amp">0.00 A</div>
+        </div>
+    </div>
 </div>
-
-<p class="hint">Ensure all components are <b>Green</b> (Snapped) to complete the circuit. Click the switch to toggle power.</p>
 
 <script>
-    const canvas = document.getElementById('circuitCanvas');
+    const canvas = document.getElementById('labCanvas');
     const ctx = canvas.getContext('2d');
-    const uiOverlay = document.getElementById('ui-overlay');
-    const vLabel = document.getElementById('v-label');
-
+    const panel = document.getElementById('inspect-panel');
+    
     let components = [];
-    let dragTarget = null;
-    let currentFlow = 0;
+    let dragData = null;
+    let selected = null;
     let eOffset = 0;
-    const SNAP_DIST = 22;
-
-    const prongs = [];
-    for (let x = 40; x < canvas.width; x += 40) {
-        for (let y = 40; y < canvas.height; y += 40) {
-            prongs.push({ x, y });
-        }
-    }
+    const PRONG_GAP = 50;
 
     function spawn(type) {
-        components.push({
-            type, x1: 400, y1: 240, x2: 520, y2: 240,
-            v: type === 'battery' ? 9 : 0,
-            isOpen: type === 'switch' ? true : false,
-            p1: true, p2: true
-        });
+        const c = {
+            type,
+            x1: 100, y1: 100, x2: 250, y2: 100,
+            v: 9, r: (type === 'resistor' ? 10 : type === 'bulb' ? 5 : 0.1),
+            isOpen: false,
+            p1: false, p2: false
+        };
+        components.push(c);
+        select(c);
     }
 
-    function getNearestProng(x, y) {
-        let nearest = null;
-        let minDist = SNAP_DIST;
-        prongs.forEach(p => {
-            let d = Math.hypot(x - p.x, y - p.y);
-            if (d < minDist) { minDist = d; nearest = p; }
-        });
-        return nearest;
+    function select(c) {
+        selected = c;
+        panel.style.display = 'block';
+        document.getElementById('item-name').innerText = c.type.toUpperCase();
+        document.getElementById('battery-ctrl').style.display = c.type === 'battery' ? 'block' : 'none';
+        document.getElementById('resistor-ctrl').style.display = c.type === 'resistor' ? 'block' : 'none';
+        if(c.type === 'battery') document.getElementById('v-val').innerText = c.v;
+        if(c.type === 'resistor') document.getElementById('r-val').innerText = c.r;
     }
 
-    function updateVoltage(val) {
-        if (dragTarget && dragTarget.obj.type === 'battery') {
-            dragTarget.obj.v = parseFloat(val);
-            vLabel.innerText = val;
-        }
+    function updateProp(prop, val) {
+        if(!selected) return;
+        selected[prop] = parseFloat(val);
+        if(prop === 'v') document.getElementById('v-val').innerText = val;
+        if(prop === 'r') document.getElementById('r-val').innerText = val;
     }
 
-    function checkCircuit() {
-        let battery = components.find(c => c.type === 'battery' && c.v > 0 && c.p1 && c.p2);
-        let bulbs = components.filter(c => c.type === 'bulb' && c.p1 && c.p2);
-        let switches = components.filter(c => c.type === 'switch');
+    function solveCircuit() {
+        let totalV = 0; let totalR = 0;
+        let hasPower = false; let closed = true;
         
-        const anySwitchOpen = switches.some(s => s.isOpen);
-        const allConnected = components.every(c => c.p1 && c.p2);
+        components.forEach(c => {
+            if(!c.p1 || !c.p2) closed = false;
+            if(c.type === 'switch' && c.isOpen) closed = false;
+            if(c.type === 'battery') { totalV += c.v; hasPower = true; }
+            totalR += c.r;
+        });
 
-        if (battery && bulbs.length > 0 && allConnected && !anySwitchOpen) {
-            return battery.v / 10;
-        }
-        return 0;
+        if(!closed || !hasPower) return { i: 0, v: 0 };
+        const current = totalV / totalR;
+        return { i: current, v: totalV };
     }
 
-    function drawComponent(c, dist, current) {
-        if (c.type === 'battery') {
-            // Battery Casing
-            ctx.fillStyle = "#333";
-            ctx.fillRect(10, -20, dist-20, 40);
-            ctx.fillStyle = "#f1c40f";
-            ctx.fillRect(10, -20, (dist-20)*0.3, 40); // Label area
-            ctx.fillStyle = "white"; ctx.font = "bold 10px Arial";
-            ctx.fillText(c.v + "V", 15, 5);
-        } 
-        else if (c.type === 'bulb') {
-            // Socket
-            ctx.fillStyle = "#7f8c8d";
-            ctx.fillRect(15, -12, dist-30, 24);
-            // Glass Bulb
-            ctx.beginPath();
-            ctx.arc(dist/2, -5, 18, 0, Math.PI * 2);
-            if (current > 0) {
-                ctx.shadowBlur = 40; ctx.shadowColor = "#f1c40f";
-                ctx.fillStyle = "rgba(255, 255, 0, 0.8)";
-            } else {
-                ctx.fillStyle = "rgba(255, 255, 255, 0.2)";
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        const circuit = solveCircuit();
+
+        // Draw Grid Prongs
+        ctx.fillStyle = "#7f8c8d";
+        for(let x=PRONG_GAP; x<canvas.width; x+=PRONG_GAP) {
+            for(let y=PRONG_GAP; y<canvas.height; y+=PRONG_GAP) {
+                ctx.beginPath(); ctx.arc(x, y, 3, 0, 7); ctx.fill();
             }
-            ctx.fill();
-            ctx.strokeStyle = "#fff"; ctx.stroke();
-            ctx.shadowBlur = 0;
-        } 
-        else if (c.type === 'switch') {
-            // Base
-            ctx.fillStyle = "#2c3e50";
-            ctx.fillRect(10, -15, dist-20, 30);
-            // Lever
-            ctx.strokeStyle = "#bdc3c7"; ctx.lineWidth = 5;
-            ctx.beginPath();
-            ctx.moveTo(dist*0.3, 0);
-            if(c.isOpen) ctx.lineTo(dist*0.6, -25); else ctx.lineTo(dist*0.7, 0);
-            ctx.stroke();
         }
-        else if (c.type === 'wire') {
-            ctx.
+
+        components.forEach(c => {
+            const dx = c.x2 - c.x1; const dy = c.y2 - c.y1;
+            const dist = Math.hypot(dx, dy); const ang = Math.atan2(dy, dx);
+
+            ctx.save();
+            ctx.translate(c.x1, c.y1);
+            ctx.rotate(ang);
+
+            // Realistic Drawing logic
+            if(c.type === 'wire') {
+                ctx.strokeStyle = '#34495e'; ctx.lineWidth = 6;
+                ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(dist, 0); ctx.stroke();
+            } else if(c.type === 'battery') {
+                ctx.fillStyle = '#2c3e50'; ctx.fillRect(10, -20, dist-20, 40);
+                ctx.fillStyle = '#f1c40f'; ctx.fillRect(10, -20, (dist-20)*0.2, 40);
+            } else if(c.type === 'resistor') {
+                ctx.fillStyle = '#d2b48c'; ctx.fillRect(20, -12, dist-40, 24);
+                // Stripes
+                ctx.fillStyle = 'brown'; ctx.fillRect(30, -12, 5, 24);
+                ctx.fillStyle = 'red'; ctx.fillRect(50, -12, 5, 24);
+            } else if(c.type === 'bulb') {
+                ctx.fillStyle = '#95a5a6'; ctx.fillRect(10, -10, dist-20, 20);
+                ctx.beginPath(); ctx.arc(dist/2, -5, 20, 0, 7);
+                if(circuit.i > 0) {
+                    ctx.shadowBlur = circuit.i * 15; ctx.shadowColor = "yellow";
+                    ctx.fillStyle = `rgba(255, 255, 0, ${Math.min(circuit.i, 1)})`;
+                } else ctx.fillStyle = "rgba(255,255,255,0.3)";
+                ctx.fill(); ctx.stroke();
+            } else if(c.type === 'switch') {
+                ctx.fillStyle = '#333'; ctx.fillRect(10, -5, dist-20, 10);
+                ctx.strokeStyle = 'white'; ctx.lineWidth = 4;
+                ctx.beginPath(); ctx.moveTo(20, 0);
+                if(c.isOpen) ctx.lineTo(dist/2, -25); else ctx.lineTo(dist-20, 0);
+                ctx.stroke();
+            }
+            ctx.restore();
+
+            // Electrons
+            if(circuit.i > 0) {
+                ctx.fillStyle = "white";
+                for(let i=0; i<dist/20; i++) {
+                    let p = ((i/(dist/20)) + eOffset) % 1;
+                    ctx.beginPath(); ctx.arc(c.x1 + dx*p, c.y1 + dy*p, 3, 0, 7); ctx.fill();
+                }
+            }
+
+            // Handles
+            ctx.fillStyle = c.p1 ? "#2ecc71" : "#e74c3c";
+            ctx.beginPath(); ctx.arc(c.x1, c.y1, 8, 0, 7); ctx.fill();
+            ctx.fillStyle = c.p2 ? "#2ecc71" : "#3498db";
+            ctx.beginPath(); ctx.arc(c.x2, c.y2, 8, 0, 7); ctx.fill();
+        });
+
+        if(selected) {
+            document.getElementById('m-volt').innerText = (circuit.i * selected.r).toFixed(2) + " V";
+            document.getElementById('m-amp').innerText = circuit.i.toFixed(2) + " A";
+        }
+
+        eOffset += circuit.i * 0.05;
+        requestAnimationFrame(draw);
+    }
+
+    canvas.onmousedown = (e) => {
+        const mx = e.offsetX, my = e.offsetY;
+        for(let c of components) {
+            if(Math.hypot(mx-c.x1, my-c.y1) < 20) { dragData = {c, p:'x1'}; select(c); return; }
+            if(Math.hypot(mx-c.x2, my-c.y2) < 20) { dragData = {c, p:'x2'}; select(c); return; }
+            let midX = (c.x1+c.x2)/2, midY = (c.y1+c.y2)/2;
+            if(Math.hypot(mx-midX, my-midY) < 30) {
+                if(c.type === 'switch') c.isOpen = !c.isOpen;
+                dragData = {c, p:'all', dx1:c.x1-mx, dy1:c.y1-my, dx2:c.x2-mx, dy2:c.y2-my};
+                select(c); return;
+            }
+        }
+    };
+
+    canvas.onmousemove = (e) => {
+        if(!dragData) return;
+        const mx = e.offsetX, my = e.offsetY;
+        const c = dragData.c;
+        
+        const snap = (v) => Math.round(v/PRONG_GAP)*PRONG_GAP;
+
+        if(dragData.p === 'x1') {
+            c.x1 = mx; c.y1 = my;
+            if(Math.abs(mx - snap(mx)) < 15 && Math.abs(my - snap(my)) < 15) {
+                c.x1 = snap(mx); c.y1 = snap(my); c.p1 = true;
+            } else c.p1 = false;
+        } else if(dragData.p === 'x2') {
+            c.x2 = mx; c.y2 = my;
+            if(Math.abs(mx - snap(mx)) < 15 && Math.abs(my - snap(my)) < 15) {
+                c.x2 = snap(mx); c.y2 = snap(my); c.p2 = true;
+            } else c.p2 = false;
+        } else {
+            c.x1 = mx + dragData.dx1; c.y1 = my + dragData.dy1;
+            c.x2 = mx + dragData.dx2; c.y2 = my + dragData.dy2;
+            c.p1 = (c.x1 % PRONG_GAP === 0 && c.y1 % PRONG_GAP === 0);
+            c.p2 = (c.x2 % PRONG_GAP === 0 && c.y2 % PRONG_GAP === 0);
+        }
+    };
+
+    canvas.onmouseup = () => dragData = null;
+    function clearBoard() { components = []; panel.style.display = 'none'; }
+    draw();
+</script>
+</body>
+</html>
