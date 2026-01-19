@@ -3,162 +3,200 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Physics Lab: Fixed Components</title>
+    <title>Metal Conductor Circuit Lab</title>
     <style>
-        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; background: #1a1a1a; color: white; margin: 0; overflow: hidden; }
-        #toolbar { background: #2c3e50; padding: 15px; width: 100%; display: flex; gap: 10px; justify-content: center; border-bottom: 4px solid #34495e; z-index: 100; }
-        .tool { padding: 10px 15px; background: #34495e; border: 1px solid #555; color: white; cursor: pointer; border-radius: 5px; font-weight: bold; }
-        .tool:hover { background: #465d75; }
-        canvas { background: #ffffff; border-radius: 8px; margin-top: 20px; box-shadow: 0 0 20px rgba(0,0,0,0.5); border: 2px solid #555; }
-        #voltage-ctrl { position: absolute; bottom: 20px; left: 20px; background: rgba(0,0,0,0.8); padding: 15px; border-radius: 8px; display: none; border: 1px solid #3498db; }
-        .instruction { color: #888; margin-top: 10px; font-size: 0.9em; }
+        body { font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; background: #2c3e50; color: #ecf0f1; margin: 0; overflow: hidden; }
+        #toolbar { background: #1a252f; padding: 15px; width: 100%; display: flex; gap: 12px; justify-content: center; border-bottom: 4px solid #34495e; box-shadow: 0 4px 10px rgba(0,0,0,0.5); z-index: 10; }
+        .tool { padding: 10px 18px; background: #34495e; border: 1px solid #555; color: #fff; cursor: pointer; border-radius: 6px; font-weight: bold; transition: 0.2s; }
+        .tool:hover { background: #1abc9c; border-color: #16a085; }
+        canvas { background: #1e272e; border-radius: 8px; margin-top: 20px; cursor: crosshair; box-shadow: 0 0 40px rgba(0,0,0,0.5); border: 4px solid #34495e; }
+        .hint { margin-top: 10px; color: #bdc3c7; font-size: 0.9em; text-align: center; }
+        #v-panel { position: absolute; bottom: 20px; left: 20px; background: rgba(26, 37, 47, 0.9); padding: 15px; border-radius: 10px; border: 2px solid #1abc9c; display: none; }
     </style>
 </head>
 <body>
 
 <div id="toolbar">
-    <button class="tool" onclick="spawn('battery')">🔋 Add Battery</button>
-    <button class="tool" onclick="spawn('bulb')">💡 Add Bulb</button>
-    <button class="tool" onclick="spawn('wire')">🧵 Add Wire</button>
-    <button class="tool" onclick="spawn('switch')">🔌 Add Switch</button>
-    <button class="tool" onclick="clearLab()" style="background: #c0392b;">Reset</button>
+    <button class="tool" onclick="spawn('battery')">&#128267; Add 9V Battery</button>
+    <button class="tool" onclick="spawn('bulb')">&#128161; Add Lightbulb</button>
+    <button class="tool" onclick="spawn('switch')">&#128268; Add Switch</button>
+    <button class="tool" onclick="clearLab()" style="background: #c0392b;">&#128465; Reset Board</button>
 </div>
 
-<canvas id="labCanvas" width="900" height="500"></canvas>
+<canvas id="circuitCanvas" width="900" height="500"></canvas>
 
-<div id="voltage-ctrl">
-    <strong>Battery: <span id="v-num">9</span>V</strong><br>
-    <input type="range" id="v-slider" min="0" max="30" value="9" oninput="setV(this.value)">
+<div id="v-panel">
+    <strong>Voltage: <span id="v-label">9</span>V</strong><br>
+    <input type="range" id="v-slider" min="0" max="24" value="9" oninput="updateV(this.value)">
 </div>
 
-<p class="instruction">If components don't appear, ensure you are using a modern browser (Chrome, Edge, or Firefox).</p>
+<p class="hint">Place components so their <b>Terminals</b> touch the <b>Gold Conductive Tracks</b>.<br>Connect the Top and Bottom tracks to complete the circuit!</p>
 
 <script>
-    const canvas = document.getElementById('labCanvas');
+    const canvas = document.getElementById('circuitCanvas');
     const ctx = canvas.getContext('2d');
-    const vCtrl = document.getElementById('voltage-ctrl');
-    const vNum = document.getElementById('v-num');
+    const vPanel = document.getElementById('v-panel');
+    const vLabel = document.getElementById('v-label');
 
     let components = [];
-    let wires = [];
     let dragObj = null;
     let selectedBat = null;
+    let currentFlow = 0;
     let eOffset = 0;
-    let current = 0;
 
-    // MANDATORY SPAWN FUNCTION
+    // Define Conductive Tracks (Top and Bottom bars)
+    const tracks = [
+        { x: 50, y: 100, w: 800, h: 40, name: 'top' },
+        { x: 50, y: 360, w: 800, h: 40, name: 'bottom' }
+    ];
+
     function spawn(type) {
-        // Place in random offset near center so they don't stack perfectly
-        const rx = (canvas.width / 2 - 50) + (Math.random() * 40 - 20);
-        const ry = (canvas.height / 2 - 30) + (Math.random() * 40 - 20);
-
-        if (type === 'wire') {
-            wires.push({ x1: rx - 50, y1: ry, x2: rx + 50, y2: ry });
-        } else {
-            components.push({
-                type, x: rx, y: ry, w: 100, h: 60,
-                v: type === 'battery' ? 9 : 0,
-                isOpen: type === 'switch' ? true : false
-            });
-        }
-        console.log("Spawned:", type); // Check your browser console (F12) to see this
+        components.push({
+            type, x: 400, y: 220, w: 100, h: 60,
+            v: type === 'battery' ? 9 : 0,
+            isOpen: type === 'switch' ? true : false,
+            connectedTop: false,
+            connectedBottom: false
+        });
     }
 
-    function setV(val) {
+    function updateV(val) {
         if (selectedBat) {
             selectedBat.v = parseFloat(val);
-            vNum.innerText = val;
+            vLabel.innerText = val;
         }
     }
 
-    function checkLoop() {
-        let bat = components.find(c => c.type === 'battery');
-        if (!bat || bat.v === 0) return 0;
-        
-        // Simple connectivity check
-        let connected = wires.filter(w => {
-            let s = components.some(c => Math.hypot(w.x1 - c.x, w.y1 - (c.y + 30)) < 25 || Math.hypot(w.x1 - (c.x + 100), w.y1 - (c.y + 30)) < 25);
-            let e = components.some(c => Math.hypot(w.x2 - c.x, w.y2 - (c.y + 30)) < 25 || Math.hypot(w.x2 - (c.x + 100), w.y2 - (c.y + 30)) < 25);
-            return s && e;
-        });
-
-        const swOpen = components.some(c => c.type === 'switch' && c.isOpen);
-        return (connected.length >= components.length && !swOpen) ? bat.v / 10 : 0;
+    function isTouching(compX, compY, track) {
+        return (compX > track.x && compX < track.x + track.w && 
+                compY > track.y && compY < track.y + track.h);
     }
 
-    function render() {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        current = checkLoop();
+    function checkLogic() {
+        let hasBattery = false;
+        let batteryVoltage = 0;
+        let pathBlocked = false;
+        let bridgeCount = 0;
 
-        // Draw Wires
-        wires.forEach(w => {
-            ctx.strokeStyle = "#333"; ctx.lineWidth = 10; ctx.lineCap = "round";
-            ctx.beginPath(); ctx.moveTo(w.x1, w.y1); ctx.lineTo(w.x2, w.y2); ctx.stroke();
+        components.forEach(c => {
+            // A component connects if its left terminal touches top track AND right touches bottom
+            // OR if multiple components form a chain (simplified for this model as bridging the two tracks)
+            c.connectedTop = isTouching(c.x, c.y + 30, tracks[0]);
+            c.connectedBottom = isTouching(c.x + 100, c.y + 30, tracks[1]);
+
+            if (c.type === 'battery' && c.connectedTop && c.connectedBottom) {
+                hasBattery = true;
+                batteryVoltage = c.v;
+            }
+            if (c.type === 'switch' && c.isOpen && c.connectedTop && c.connectedBottom) {
+                pathBlocked = true;
+            }
+            if (c.type === 'bulb' && c.connectedTop && c.connectedBottom) {
+                bridgeCount++;
+            }
+        });
+
+        if (hasBattery && !pathBlocked && bridgeCount > 0) {
+            return batteryVoltage / 10;
+        }
+        return 0;
+    }
+
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        currentFlow = checkLogic();
+
+        // 1. Draw Background Metal Tracks
+        tracks.forEach(t => {
+            let grad = ctx.createLinearGradient(t.x, t.y, t.x, t.y + t.h);
+            grad.addColorStop(0, "#d4af37"); // Gold
+            grad.addColorStop(0.5, "#f1c40f");
+            grad.addColorStop(1, "#9a7d0a");
+            ctx.fillStyle = grad;
+            ctx.shadowBlur = 10; ctx.shadowColor = "rgba(0,0,0,0.5)";
+            ctx.fillRect(t.x, t.y, t.w, t.h);
+            ctx.shadowBlur = 0;
             
-            if (current > 0) {
-                ctx.fillStyle = "#f1c40f";
-                let dx = w.x2 - w.x1, dy = w.y2 - w.y1, dist = Math.hypot(dx, dy), dots = Math.floor(dist/15);
-                for(let i=0; i<dots; i++){
-                    let p = ((i/dots) + eOffset) % 1;
-                    ctx.beginPath(); ctx.arc(w.x1 + dx*p, w.y1 + dy*p, 3, 0, 7); ctx.fill();
+            // Texture/Bolts on tracks
+            ctx.fillStyle = "rgba(0,0,0,0.1)";
+            for(let i=t.x + 20; i < t.x + t.w; i += 100) {
+                ctx.beginPath(); ctx.arc(i, t.y + 20, 5, 0, 7); ctx.fill();
+            }
+
+            // Draw flowing electrons in the tracks
+            if (currentFlow > 0) {
+                ctx.fillStyle = "#fff";
+                for(let i=0; i < 20; i++) {
+                    let p = ((i/20) + eOffset) % 1;
+                    ctx.beginPath(); ctx.arc(t.x + t.w * p, t.y + 20, 3, 0, 7); ctx.fill();
                 }
             }
         });
 
-        // Draw Components
+        // 2. Draw Components
         components.forEach(c => {
-            // Draw Body
-            ctx.fillStyle = c.type === 'battery' ? "#2c3e50" : "#95a5a6";
-            if (c.type === 'bulb' && current > 0) {
-                ctx.shadowBlur = 20; ctx.shadowColor = "yellow";
-                ctx.fillStyle = "#f1c40f";
+            ctx.save();
+            // Component Body
+            if (c.type === 'battery') {
+                ctx.fillStyle = "#2c3e50"; ctx.fillRect(c.x + 10, c.y, 80, 60);
+                ctx.fillStyle = "#ecf0f1"; ctx.font = "bold 12px Arial";
+                ctx.fillText(c.v + "V DC", c.x + 30, c.y + 35);
+            } else if (c.type === 'bulb') {
+                ctx.fillStyle = "#7f8c8d"; ctx.fillRect(c.x + 40, c.y + 40, 20, 20);
+                ctx.beginPath(); ctx.arc(c.x + 50, c.y + 20, 20, 0, 7);
+                if (currentFlow > 0 && c.connectedTop && c.connectedBottom) {
+                    ctx.shadowBlur = 30; ctx.shadowColor = "yellow";
+                    ctx.fillStyle = "#f1c40f";
+                } else { ctx.fillStyle = "rgba(200, 200, 200, 0.3)"; }
+                ctx.fill(); ctx.stroke();
+            } else if (c.type === 'switch') {
+                ctx.fillStyle = "#34495e"; ctx.fillRect(c.x + 20, c.y + 45, 60, 10);
+                ctx.strokeStyle = "#fff"; ctx.lineWidth = 3; ctx.beginPath();
+                ctx.moveTo(c.x + 30, c.y + 45);
+                if(c.isOpen) ctx.lineTo(c.x + 50, c.y + 10); else ctx.lineTo(c.x + 70, c.y + 45);
+                ctx.stroke();
             }
-            ctx.fillRect(c.x + 10, c.y + 10, 80, 40);
-            ctx.shadowBlur = 0;
 
-            // Labels
-            ctx.fillStyle = "white"; ctx.font = "10px Arial";
-            ctx.fillText(c.type.toUpperCase(), c.x + 20, c.y + 35);
-            if(c.type === 'battery') ctx.fillText(c.v + "V", c.x + 65, c.y + 35);
-
-            // Terminals
-            ctx.fillStyle = "#e74c3c"; ctx.beginPath(); ctx.arc(c.x, c.y + 30, 8, 0, 7); ctx.fill();
-            ctx.fillStyle = "#3498db"; ctx.beginPath(); ctx.arc(c.x + 100, c.y + 30, 8, 0, 7); ctx.fill();
+            // Draw Metal "Legs" / Terminals
+            ctx.fillStyle = "#bdc3c7";
+            ctx.fillRect(c.x - 5, c.y + 25, 15, 10); // Left Leg
+            ctx.fillRect(c.x + 90, c.y + 25, 15, 10); // Right Leg
+            
+            // Node Indicators
+            ctx.fillStyle = c.connectedTop ? "#2ecc71" : "#e74c3c";
+            ctx.beginPath(); ctx.arc(c.x, c.y + 30, 6, 0, 7); ctx.fill();
+            ctx.fillStyle = c.connectedBottom ? "#2ecc71" : "#3498db";
+            ctx.beginPath(); ctx.arc(c.x + 100, c.y + 30, 6, 0, 7); ctx.fill();
+            ctx.restore();
         });
 
-        eOffset += current * 0.05;
-        requestAnimationFrame(render);
+        eOffset += currentFlow * 0.05;
+        requestAnimationFrame(draw);
     }
 
     canvas.onmousedown = (e) => {
         const { offsetX: mx, offsetY: my } = e;
-        for (let w of wires) {
-            if (Math.hypot(mx - w.x1, my - w.y1) < 20) { dragObj = { obj: w, p: 'x1' }; return; }
-            if (Math.hypot(mx - w.x2, my - w.y2) < 20) { dragObj = { obj: w, p: 'x2' }; return; }
-        }
         for (let c of components) {
             if (mx > c.x && mx < c.x + 100 && my > c.y && my < c.y + 60) {
-                if (c.type === 'switch') { c.isOpen = !c.isOpen; return; }
-                if (c.type === 'battery') { selectedBat = c; vCtrl.style.display = 'block'; }
-                dragObj = { obj: c, p: 'c', ox: c.x - mx, oy: c.y - my };
+                if (c.type === 'switch' && my > c.y + 30) { c.isOpen = !c.isOpen; return; }
+                if (c.type === 'battery') { selectedBat = c; vPanel.style.display = 'block'; vLabel.innerText = c.v; document.getElementById('v-slider').value = c.v; }
+                dragObj = { c, ox: c.x - mx, oy: c.y - my };
                 return;
             }
         }
+        vPanel.style.display = 'none';
     };
 
     canvas.onmousemove = (e) => {
-        if (!dragObj) return;
-        const { offsetX: mx, offsetY: my } = e;
-        if (dragObj.p === 'x1') { dragObj.obj.x1 = mx; dragObj.obj.y1 = my; }
-        else if (dragObj.p === 'x2') { dragObj.obj.x2 = mx; dragObj.obj.y2 = my; }
-        else { dragObj.obj.x = mx + dragObj.ox; dragObj.obj.y = my + dragObj.oy; }
+        if (dragObj) {
+            dragObj.c.x = e.offsetX + dragObj.ox;
+            dragObj.c.y = e.offsetY + dragObj.oy;
+        }
     };
 
     canvas.onmouseup = () => dragObj = null;
-    function clearLab() { components = []; wires = []; vCtrl.style.display = 'none'; }
-    
-    // Start the engine
-    render();
+    function clearLab() { components = []; vPanel.style.display = 'none'; }
+    draw();
 </script>
 </body>
 </html>
