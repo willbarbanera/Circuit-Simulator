@@ -3,189 +3,162 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Circuit Lab - Variable Voltage</title>
+    <title>Physics Lab: Fixed Components</title>
     <style>
-        body { font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; background: #121212; color: #e0e0e0; margin: 0; overflow: hidden; }
-        #toolbar { background: #1f1f1f; padding: 15px; width: 100%; display: flex; gap: 10px; justify-content: center; border-bottom: 3px solid #333; flex-wrap: wrap; }
-        .tool { padding: 10px 14px; background: #333; border: 1px solid #444; color: #fff; cursor: pointer; border-radius: 6px; font-weight: 600; }
-        .tool:hover { background: #444; }
-        .tool.active { background: #f1c40f; color: #000; }
-        canvas { background: #ffffff; border-radius: 8px; margin-top: 15px; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
-        
-        /* UI Overlays */
-        #meter-readout { position: absolute; background: rgba(0, 20, 0, 0.9); color: #00ff00; padding: 10px; border: 2px solid #00ff00; border-radius: 8px; pointer-events: none; display: none; font-family: monospace; z-index: 1000; }
-        #voltage-panel { position: absolute; bottom: 20px; left: 20px; background: #2c3e50; padding: 15px; border-radius: 10px; border: 2px solid #34495e; display: none; }
-        
-        input[type=range] { width: 150px; cursor: pointer; }
-        .hint { margin-top: 8px; color: #888; font-size: 0.85rem; }
+        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; background: #1a1a1a; color: white; margin: 0; overflow: hidden; }
+        #toolbar { background: #2c3e50; padding: 15px; width: 100%; display: flex; gap: 10px; justify-content: center; border-bottom: 4px solid #34495e; z-index: 100; }
+        .tool { padding: 10px 15px; background: #34495e; border: 1px solid #555; color: white; cursor: pointer; border-radius: 5px; font-weight: bold; }
+        .tool:hover { background: #465d75; }
+        canvas { background: #ffffff; border-radius: 8px; margin-top: 20px; box-shadow: 0 0 20px rgba(0,0,0,0.5); border: 2px solid #555; }
+        #voltage-ctrl { position: absolute; bottom: 20px; left: 20px; background: rgba(0,0,0,0.8); padding: 15px; border-radius: 8px; display: none; border: 1px solid #3498db; }
+        .instruction { color: #888; margin-top: 10px; font-size: 0.9em; }
     </style>
 </head>
 <body>
 
 <div id="toolbar">
-    <button class="tool" onclick="addComponent('battery', 9)">🔋 Add Battery</button>
-    <button class="tool" onclick="addComponent('bulb', 10)">💡 Add Bulb</button>
-    <button class="tool" onclick="addWire()">🧵 Add Wire</button>
-    <button class="tool" id="meterBtn" onclick="toggleMeter()">📟 Multimeter</button>
-    <button class="tool" onclick="clearAll()" style="background: #555;">Clear All</button>
+    <button class="tool" onclick="spawn('battery')">🔋 Add Battery</button>
+    <button class="tool" onclick="spawn('bulb')">💡 Add Bulb</button>
+    <button class="tool" onclick="spawn('wire')">🧵 Add Wire</button>
+    <button class="tool" onclick="spawn('switch')">🔌 Add Switch</button>
+    <button class="tool" onclick="clearLab()" style="background: #c0392b;">Reset</button>
 </div>
 
-<canvas id="circuitCanvas" width="950" height="500"></canvas>
+<canvas id="labCanvas" width="900" height="500"></canvas>
 
-<div id="voltage-panel">
-    <strong>Battery Voltage: <span id="v-label">9</span>V</strong><br>
-    <input type="range" id="v-slider" min="0" max="24" step="0.5" value="9" oninput="updateVoltage(this.value)">
+<div id="voltage-ctrl">
+    <strong>Battery: <span id="v-num">9</span>V</strong><br>
+    <input type="range" id="v-slider" min="0" max="30" value="9" oninput="setV(this.value)">
 </div>
 
-<div id="meter-readout"></div>
-<p class="hint">Click a battery to adjust its voltage. Increase voltage to make bulbs brighter!</p>
+<p class="instruction">If components don't appear, ensure you are using a modern browser (Chrome, Edge, or Firefox).</p>
 
 <script>
-    const canvas = document.getElementById('circuitCanvas');
+    const canvas = document.getElementById('labCanvas');
     const ctx = canvas.getContext('2d');
-    const meterReadout = document.getElementById('meter-readout');
-    const vPanel = document.getElementById('voltage-panel');
-    const vLabel = document.getElementById('v-label');
-    const vSlider = document.getElementById('v-slider');
+    const vCtrl = document.getElementById('voltage-ctrl');
+    const vNum = document.getElementById('v-num');
 
     let components = [];
     let wires = [];
-    let dragTarget = null;
-    let selectedBattery = null;
-    let meterActive = false;
-    let currentFlow = 0;
+    let dragObj = null;
+    let selectedBat = null;
+    let eOffset = 0;
+    let current = 0;
 
-    function addComponent(type, val) {
-        components.push({
-            type, x: 150, y: 150, w: 100, h: 60,
-            v: type === 'battery' ? val : 0,
-            r: (type === 'bulb') ? 10 : 0.01,
-            glow: 0
-        });
-        draw();
+    // MANDATORY SPAWN FUNCTION
+    function spawn(type) {
+        // Place in random offset near center so they don't stack perfectly
+        const rx = (canvas.width / 2 - 50) + (Math.random() * 40 - 20);
+        const ry = (canvas.height / 2 - 30) + (Math.random() * 40 - 20);
+
+        if (type === 'wire') {
+            wires.push({ x1: rx - 50, y1: ry, x2: rx + 50, y2: ry });
+        } else {
+            components.push({
+                type, x: rx, y: ry, w: 100, h: 60,
+                v: type === 'battery' ? 9 : 0,
+                isOpen: type === 'switch' ? true : false
+            });
+        }
+        console.log("Spawned:", type); // Check your browser console (F12) to see this
     }
 
-    function addWire() {
-        wires.push({ x1: 50, y1: 50, x2: 200, y2: 50 });
-        draw();
-    }
-
-    function updateVoltage(val) {
-        if (selectedBattery) {
-            selectedBattery.v = parseFloat(val);
-            vLabel.innerText = val;
-            updatePhysics();
-            draw();
+    function setV(val) {
+        if (selectedBat) {
+            selectedBat.v = parseFloat(val);
+            vNum.innerText = val;
         }
     }
 
-    function updatePhysics() {
-        let battery = components.find(c => c.type === 'battery');
-        let bulbs = components.filter(c => c.type === 'bulb');
+    function checkLoop() {
+        let bat = components.find(c => c.type === 'battery');
+        if (!bat || bat.v === 0) return 0;
         
-        // Count valid connections
-        let connectedWires = wires.filter(w => {
-            let s = components.some(c => Math.hypot(w.x1 - c.x, w.y1 - (c.y + 30)) < 20 || Math.hypot(w.x1 - (c.x + 100), w.y1 - (c.y + 30)) < 20);
-            let e = components.some(c => Math.hypot(w.x2 - c.x, w.y2 - (c.y + 30)) < 20 || Math.hypot(w.x2 - (c.x + 100), w.y2 - (c.y + 30)) < 20);
+        // Simple connectivity check
+        let connected = wires.filter(w => {
+            let s = components.some(c => Math.hypot(w.x1 - c.x, w.y1 - (c.y + 30)) < 25 || Math.hypot(w.x1 - (c.x + 100), w.y1 - (c.y + 30)) < 25);
+            let e = components.some(c => Math.hypot(w.x2 - c.x, w.y2 - (c.y + 30)) < 25 || Math.hypot(w.x2 - (c.x + 100), w.y2 - (c.y + 30)) < 25);
             return s && e;
         });
 
-        if (battery && connectedWires.length >= (components.length)) {
-            let totalR = bulbs.length * 10;
-            currentFlow = battery.v / (totalR || 1);
-            // Glow scales with current
-            bulbs.forEach(b => b.glow = Math.min(currentFlow / 0.9, 2)); 
-        } else {
-            currentFlow = 0;
-            components.forEach(c => c.glow = 0);
-        }
+        const swOpen = components.some(c => c.type === 'switch' && c.isOpen);
+        return (connected.length >= components.length && !swOpen) ? bat.v / 10 : 0;
     }
 
-    function draw() {
+    function render() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        
+        current = checkLoop();
+
+        // Draw Wires
         wires.forEach(w => {
-            ctx.strokeStyle = currentFlow > 0 ? "#3498db" : "#7f8c8d";
-            ctx.lineWidth = 6;
+            ctx.strokeStyle = "#333"; ctx.lineWidth = 10; ctx.lineCap = "round";
             ctx.beginPath(); ctx.moveTo(w.x1, w.y1); ctx.lineTo(w.x2, w.y2); ctx.stroke();
-            ctx.fillStyle = "#333";
-            ctx.beginPath(); ctx.arc(w.x1, w.y1, 8, 0, Math.PI*2); ctx.fill();
-            ctx.beginPath(); ctx.arc(w.x2, w.y2, 8, 0, Math.PI*2); ctx.fill();
+            
+            if (current > 0) {
+                ctx.fillStyle = "#f1c40f";
+                let dx = w.x2 - w.x1, dy = w.y2 - w.y1, dist = Math.hypot(dx, dy), dots = Math.floor(dist/15);
+                for(let i=0; i<dots; i++){
+                    let p = ((i/dots) + eOffset) % 1;
+                    ctx.beginPath(); ctx.arc(w.x1 + dx*p, w.y1 + dy*p, 3, 0, 7); ctx.fill();
+                }
+            }
         });
 
+        // Draw Components
         components.forEach(c => {
-            if (c.type === 'battery') {
-                ctx.fillStyle = (selectedBattery === c) ? "#34495e" : "#2c3e50";
-                ctx.fillRect(c.x + 10, c.y, 70, 45);
-                ctx.fillStyle = "#bdc3c7"; ctx.fillRect(c.x + 20, c.y - 8, 15, 8); ctx.fillRect(c.x + 55, c.y - 8, 15, 8);
-                ctx.fillStyle = "#ecf0f1"; ctx.font = "bold 14px Arial"; ctx.fillText(`${c.v}V DC`, c.x + 18, c.y + 28);
-            } else if (c.type === 'bulb') {
-                ctx.fillStyle = "#95a5a6"; ctx.fillRect(c.x + 35, c.y + 35, 30, 15);
-                ctx.beginPath(); ctx.arc(c.x + 50, c.y + 20, 22, 0, Math.PI * 2);
-                if (c.glow > 0) {
-                    ctx.shadowBlur = 20 * c.glow; ctx.shadowColor = "#f1c40f";
-                    ctx.fillStyle = `rgba(255, 255, ${200 - (c.glow * 50)}, ${0.3 + (c.glow * 0.7)})`;
-                } else { ctx.fillStyle = "rgba(200, 200, 200, 0.2)"; }
-                ctx.fill(); ctx.shadowBlur = 0; ctx.strokeStyle = "#444"; ctx.stroke();
+            // Draw Body
+            ctx.fillStyle = c.type === 'battery' ? "#2c3e50" : "#95a5a6";
+            if (c.type === 'bulb' && current > 0) {
+                ctx.shadowBlur = 20; ctx.shadowColor = "yellow";
+                ctx.fillStyle = "#f1c40f";
             }
+            ctx.fillRect(c.x + 10, c.y + 10, 80, 40);
+            ctx.shadowBlur = 0;
+
+            // Labels
+            ctx.fillStyle = "white"; ctx.font = "10px Arial";
+            ctx.fillText(c.type.toUpperCase(), c.x + 20, c.y + 35);
+            if(c.type === 'battery') ctx.fillText(c.v + "V", c.x + 65, c.y + 35);
+
             // Terminals
-            ctx.fillStyle = "#e74c3c"; ctx.beginPath(); ctx.arc(c.x, c.y + 30, 7, 0, Math.PI*2); ctx.fill();
-            ctx.fillStyle = "#34495e"; ctx.beginPath(); ctx.arc(c.x + 100, c.y + 30, 7, 0, Math.PI*2); ctx.fill();
+            ctx.fillStyle = "#e74c3c"; ctx.beginPath(); ctx.arc(c.x, c.y + 30, 8, 0, 7); ctx.fill();
+            ctx.fillStyle = "#3498db"; ctx.beginPath(); ctx.arc(c.x + 100, c.y + 30, 8, 0, 7); ctx.fill();
         });
+
+        eOffset += current * 0.05;
+        requestAnimationFrame(render);
     }
 
     canvas.onmousedown = (e) => {
         const { offsetX: mx, offsetY: my } = e;
-        
-        // Select Battery
-        let bat = components.find(c => c.type === 'battery' && mx > c.x && mx < c.x + c.w && my > c.y && my < c.y + c.h);
-        if (bat) {
-            selectedBattery = bat;
-            vPanel.style.display = 'block';
-            vSlider.value = bat.v;
-            vLabel.innerText = bat.v;
-        } else {
-            vPanel.style.display = 'none';
-            selectedBattery = null;
+        for (let w of wires) {
+            if (Math.hypot(mx - w.x1, my - w.y1) < 20) { dragObj = { obj: w, p: 'x1' }; return; }
+            if (Math.hypot(mx - w.x2, my - w.y2) < 20) { dragObj = { obj: w, p: 'x2' }; return; }
         }
-
-        // Drag wires
-        wires.forEach(w => {
-            if (Math.hypot(mx - w.x1, my - w.y1) < 15) dragTarget = { obj: w, part: 'start' };
-            if (Math.hypot(mx - w.x2, my - w.y2) < 15) dragTarget = { obj: w, part: 'end' };
-        });
-
-        // Drag components
-        if (!dragTarget) {
-            components.forEach(c => {
-                if (mx > c.x && mx < c.x + c.w && my > c.y && my < c.y + c.h) dragTarget = { obj: c, part: 'body' };
-            });
+        for (let c of components) {
+            if (mx > c.x && mx < c.x + 100 && my > c.y && my < c.y + 60) {
+                if (c.type === 'switch') { c.isOpen = !c.isOpen; return; }
+                if (c.type === 'battery') { selectedBat = c; vCtrl.style.display = 'block'; }
+                dragObj = { obj: c, p: 'c', ox: c.x - mx, oy: c.y - my };
+                return;
+            }
         }
     };
 
     canvas.onmousemove = (e) => {
-        const { offsetX: mx, offsetY: my, clientX: cx, clientY: cy } = e;
-        if (dragTarget) {
-            if (dragTarget.part === 'start') { dragTarget.obj.x1 = mx; dragTarget.obj.y1 = my; }
-            else if (dragTarget.part === 'end') { dragTarget.obj.x2 = mx; dragTarget.obj.y2 = my; }
-            else { dragTarget.obj.x = mx - 50; dragTarget.obj.y = my - 30; }
-            updatePhysics(); draw();
-        }
-
-        if (meterActive) {
-            let found = components.find(c => mx > c.x && mx < c.x + c.w && my > c.y && my < c.y + c.h);
-            if (found) {
-                meterReadout.style.display = 'block';
-                meterReadout.style.left = (cx + 15) + 'px';
-                meterReadout.style.top = (cy + 15) + 'px';
-                meterReadout.innerHTML = `V: ${(currentFlow * (found.r || 0)).toFixed(2)}V<br>I: ${currentFlow.toFixed(2)}A`;
-            } else { meterReadout.style.display = 'none'; }
-        }
+        if (!dragObj) return;
+        const { offsetX: mx, offsetY: my } = e;
+        if (dragObj.p === 'x1') { dragObj.obj.x1 = mx; dragObj.obj.y1 = my; }
+        else if (dragObj.p === 'x2') { dragObj.obj.x2 = mx; dragObj.obj.y2 = my; }
+        else { dragObj.obj.x = mx + dragObj.ox; dragObj.obj.y = my + dragObj.oy; }
     };
 
-    canvas.onmouseup = () => { dragTarget = null; };
-    function toggleMeter() { meterActive = !meterActive; document.getElementById('meterBtn').classList.toggle('active'); }
-    function clearAll() { components = []; wires = []; vPanel.style.display = 'none'; currentFlow = 0; draw(); }
+    canvas.onmouseup = () => dragObj = null;
+    function clearLab() { components = []; wires = []; vCtrl.style.display = 'none'; }
+    
+    // Start the engine
+    render();
 </script>
 </body>
 </html>
