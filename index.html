@@ -3,15 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pro-Level Magnetic Breadboard Lab</title>
+    <title>Realistic Breadboard Lab</title>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; flex-direction: column; align-items: center; background: #1a1a1a; color: #eee; margin: 0; overflow: hidden; }
-        #toolbar { background: #2c3e50; padding: 15px; width: 100%; display: flex; gap: 12px; justify-content: center; border-bottom: 4px solid #34495e; box-shadow: 0 4px 10px rgba(0,0,0,0.5); z-index: 10; }
-        .tool { padding: 10px 18px; background: #34495e; border: 1px solid #555; color: #fff; cursor: pointer; border-radius: 6px; font-weight: bold; transition: 0.2s; }
+        body { font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; background: #2c3e50; color: #ecf0f1; margin: 0; overflow: hidden; }
+        #toolbar { background: #1a252f; padding: 15px; width: 100%; display: flex; gap: 12px; justify-content: center; border-bottom: 4px solid #34495e; z-index: 10; }
+        .tool { padding: 10px 18px; background: #34495e; border: 1px solid #555; color: #fff; cursor: pointer; border-radius: 6px; font-weight: bold; }
         .tool:hover { background: #1abc9c; }
-        .tool.active { background: #e74c3c; border-color: #ff0000; box-shadow: 0 0 10px #e74c3c; }
-        canvas { background: #ecf0f1; border-radius: 8px; margin-top: 20px; cursor: crosshair; box-shadow: 0 0 40px rgba(0,0,0,0.7); border: 8px solid #bdc3c7; }
-        #ui-overlay { position: absolute; bottom: 20px; left: 20px; background: rgba(26, 37, 47, 0.9); padding: 15px; border-radius: 10px; border: 2px solid #1abc9c; display: none; min-width: 150px; }
+        canvas { background: #dcdde1; border-radius: 8px; margin-top: 20px; cursor: crosshair; box-shadow: 0 0 40px rgba(0,0,0,0.5); border: 10px solid #7f8c8d; }
+        #ui-overlay { position: absolute; bottom: 20px; left: 20px; background: rgba(26, 37, 47, 0.95); padding: 15px; border-radius: 10px; border: 2px solid #f1c40f; display: none; }
         .hint { margin-top: 10px; color: #bdc3c7; font-size: 0.85rem; }
     </style>
 </head>
@@ -19,64 +18,48 @@
 
 <div id="toolbar">
     <button class="tool" onclick="spawn('battery')">🔋 Battery</button>
-    <button class="tool" onclick="spawn('bulb')">💡 Bulb</button>
-    <button class="tool" onclick="spawn('wire')">🧵 Wire</button>
-    <button class="tool" onclick="spawn('switch')">🔌 Switch</button>
-    <button class="tool" id="deleteBtn" onclick="toggleDeleteMode()">🗑️ Delete Mode</button>
-    <button class="tool" onclick="clearLab()" style="background: #c0392b;">Reset Board</button>
+    <button class="tool" onclick="spawn('bulb')">💡 Lightbulb</button>
+    <button class="tool" onclick="spawn('wire')">🧵 Jumper Wire</button>
+    <button class="tool" onclick="spawn('switch')">🔌 Toggle Switch</button>
+    <button class="tool" onclick="clearLab()" style="background: #c0392b;">Reset</button>
 </div>
 
-<canvas id="circuitCanvas" width="950" height="550"></canvas>
+<canvas id="circuitCanvas" width="950" height="520"></canvas>
 
 <div id="ui-overlay">
-    <strong id="comp-title">Battery</strong><br>
-    <label>Voltage: <span id="v-label">12</span>V</label><br>
-    <input type="range" id="v-slider" min="0" max="36" step="1" value="12" oninput="updateVoltage(this.value)">
+    <strong>9V Battery Settings</strong><br>
+    <label>Voltage: <span id="v-label">9</span>V</label><br>
+    <input type="range" id="v-slider" min="0" max="24" value="9" oninput="updateVoltage(this.value)">
 </div>
 
-<p class="hint"><b>Drag Handles:</b> Stretch/Shorten & Snap to Prongs. | <b>Drag Body:</b> Move Component. | <b>Delete Mode:</b> Click any object to remove.</p>
+<p class="hint">Ensure all components are <b>Green</b> (Snapped) to complete the circuit. Click the switch to toggle power.</p>
 
 <script>
     const canvas = document.getElementById('circuitCanvas');
     const ctx = canvas.getContext('2d');
     const uiOverlay = document.getElementById('ui-overlay');
     const vLabel = document.getElementById('v-label');
-    const vSlider = document.getElementById('v-slider');
-    const deleteBtn = document.getElementById('deleteBtn');
 
     let components = [];
     let dragTarget = null;
-    let deleteMode = false;
     let currentFlow = 0;
     let eOffset = 0;
-    const SNAP_DIST = 25;
+    const SNAP_DIST = 22;
 
-    // Create Breadboard Grid
     const prongs = [];
-    const spacing = 45;
-    for (let x = spacing; x < canvas.width; x += spacing) {
-        for (let y = spacing; y < canvas.height; y += spacing) {
+    for (let x = 40; x < canvas.width; x += 40) {
+        for (let y = 40; y < canvas.height; y += 40) {
             prongs.push({ x, y });
         }
     }
 
     function spawn(type) {
-        if(deleteMode) toggleDeleteMode();
         components.push({
-            type,
-            x1: 405, y1: 225, // Start point
-            x2: 540, y2: 225, // End point
-            v: type === 'battery' ? 12 : 0,
+            type, x1: 400, y1: 240, x2: 520, y2: 240,
+            v: type === 'battery' ? 9 : 0,
             isOpen: type === 'switch' ? true : false,
-            p1: true, p2: true // Snap status
+            p1: true, p2: true
         });
-    }
-
-    function toggleDeleteMode() {
-        deleteMode = !deleteMode;
-        deleteBtn.classList.toggle('active');
-        canvas.style.cursor = deleteMode ? "no-drop" : "crosshair";
-        uiOverlay.style.display = 'none';
     }
 
     function getNearestProng(x, y) {
@@ -98,144 +81,55 @@
 
     function checkCircuit() {
         let battery = components.find(c => c.type === 'battery' && c.v > 0 && c.p1 && c.p2);
-        let hasBulb = components.some(c => c.type === 'bulb' && c.p1 && c.p2);
-        let swOpen = components.some(c => c.type === 'switch' && c.isOpen);
-        const allSnapped = components.every(c => c.p1 && c.p2);
+        let bulbs = components.filter(c => c.type === 'bulb' && c.p1 && c.p2);
+        let switches = components.filter(c => c.type === 'switch');
+        
+        const anySwitchOpen = switches.some(s => s.isOpen);
+        const allConnected = components.every(c => c.p1 && c.p2);
 
-        if (battery && hasBulb && allSnapped && !swOpen) {
+        if (battery && bulbs.length > 0 && allConnected && !anySwitchOpen) {
             return battery.v / 10;
         }
         return 0;
     }
 
-    function draw() {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        currentFlow = checkCircuit();
-
-        // 1. Draw Breadboard Prongs
-        ctx.fillStyle = "#bdc3c7";
-        prongs.forEach(p => {
-            ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, Math.PI * 2); ctx.fill();
-        });
-
-        // 2. Draw Components
-        components.forEach(c => {
-            const dx = c.x2 - c.x1;
-            const dy = c.y2 - c.y1;
-            const angle = Math.atan2(dy, dx);
-            const dist = Math.hypot(dx, dy);
-
-            ctx.save();
-            ctx.translate(c.x1, c.y1);
-            ctx.rotate(angle);
-
-            // Draw Body
-            if (c.type === 'wire') {
-                ctx.strokeStyle = currentFlow > 0 ? "#3498db" : "#34495e";
-                ctx.lineWidth = 10;
-                ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(dist, 0); ctx.stroke();
+    function drawComponent(c, dist, current) {
+        if (c.type === 'battery') {
+            // Battery Casing
+            ctx.fillStyle = "#333";
+            ctx.fillRect(10, -20, dist-20, 40);
+            ctx.fillStyle = "#f1c40f";
+            ctx.fillRect(10, -20, (dist-20)*0.3, 40); // Label area
+            ctx.fillStyle = "white"; ctx.font = "bold 10px Arial";
+            ctx.fillText(c.v + "V", 15, 5);
+        } 
+        else if (c.type === 'bulb') {
+            // Socket
+            ctx.fillStyle = "#7f8c8d";
+            ctx.fillRect(15, -12, dist-30, 24);
+            // Glass Bulb
+            ctx.beginPath();
+            ctx.arc(dist/2, -5, 18, 0, Math.PI * 2);
+            if (current > 0) {
+                ctx.shadowBlur = 40; ctx.shadowColor = "#f1c40f";
+                ctx.fillStyle = "rgba(255, 255, 0, 0.8)";
             } else {
-                ctx.fillStyle = (c.type === 'battery') ? "#2c3e50" : (c.type === 'bulb') ? "#95a5a6" : "#7f8c8d";
-                ctx.fillRect(5, -15, dist - 10, 30);
-                
-                if (c.type === 'bulb' && currentFlow > 0) {
-                    ctx.shadowBlur = 30; ctx.shadowColor = "#f1c40f";
-                    ctx.fillStyle = "#f1c40f";
-                    ctx.beginPath(); ctx.arc(dist/2, 0, 18, 0, 7); ctx.fill();
-                    ctx.shadowBlur = 0;
-                }
-                if (c.type === 'switch' && c.isOpen) {
-                    ctx.strokeStyle = "#eee"; ctx.lineWidth = 4;
-                    ctx.beginPath(); ctx.moveTo(20, 0); ctx.lineTo(dist/2, -22); ctx.stroke();
-                }
+                ctx.fillStyle = "rgba(255, 255, 255, 0.2)";
             }
-            ctx.restore();
-
-            // Electrons Flow
-            if (currentFlow > 0) {
-                ctx.fillStyle = "#fff";
-                let dots = Math.floor(dist / 20);
-                for(let i=0; i<dots; i++) {
-                    let p = ((i/dots) + eOffset) % 1;
-                    ctx.beginPath(); ctx.arc(c.x1 + dx*p, c.y1 + dy*p, 3.5, 0, 7); ctx.fill();
-                }
-            }
-
-            // Magnetic Terminals
-            ctx.fillStyle = c.p1 ? "#2ecc71" : "#e74c3c";
-            ctx.beginPath(); ctx.arc(c.x1, c.y1, 8, 0, 7); ctx.fill();
-            ctx.fillStyle = c.p2 ? "#2ecc71" : "#3498db";
-            ctx.beginPath(); ctx.arc(c.x2, c.y2, 8, 0, 7); ctx.fill();
-        });
-
-        eOffset += currentFlow * 0.04;
-        requestAnimationFrame(draw);
-    }
-
-    canvas.onmousedown = (e) => {
-        const { offsetX: mx, offsetY: my } = e;
-
-        if (deleteMode) {
-            components = components.filter(c => {
-                let midX = (c.x1 + c.x2)/2; let midY = (c.y1 + c.y2)/2;
-                return Math.hypot(mx - midX, my - midY) > 30 && 
-                       Math.hypot(mx - c.x1, my - c.y1) > 20 && 
-                       Math.hypot(mx - c.x2, my - c.y2) > 20;
-            });
-            return;
+            ctx.fill();
+            ctx.strokeStyle = "#fff"; ctx.stroke();
+            ctx.shadowBlur = 0;
+        } 
+        else if (c.type === 'switch') {
+            // Base
+            ctx.fillStyle = "#2c3e50";
+            ctx.fillRect(10, -15, dist-20, 30);
+            // Lever
+            ctx.strokeStyle = "#bdc3c7"; ctx.lineWidth = 5;
+            ctx.beginPath();
+            ctx.moveTo(dist*0.3, 0);
+            if(c.isOpen) ctx.lineTo(dist*0.6, -25); else ctx.lineTo(dist*0.7, 0);
+            ctx.stroke();
         }
-
-        for (let c of components) {
-            // Drag handles
-            if (Math.hypot(mx - c.x1, my - c.y1) < 20) { dragTarget = { obj: c, part: 'x1' }; return; }
-            if (Math.hypot(mx - c.x2, my - c.y2) < 20) { dragTarget = { obj: c, part: 'x2' }; return; }
-            
-            // Drag body / Toggle Switch
-            let midX = (c.x1 + c.x2)/2; let midY = (c.y1 + c.y2)/2;
-            if (Math.hypot(mx - midX, my - midY) < 35) {
-                if (c.type === 'switch') { c.isOpen = !c.isOpen; return; }
-                if (c.type === 'battery') {
-                    uiOverlay.style.display = 'block';
-                    vSlider.value = c.v;
-                    vLabel.innerText = c.v;
-                } else { uiOverlay.style.display = 'none'; }
-                dragTarget = { obj: c, part: 'all', ox1: c.x1-mx, oy1: c.y1-my, ox2: c.x2-mx, oy2: c.y2-my };
-                return;
-            }
-        }
-        uiOverlay.style.display = 'none';
-    };
-
-    canvas.onmousemove = (e) => {
-        if (!dragTarget) return;
-        const { offsetX: mx, offsetY: my } = e;
-        
-        if (dragTarget.part === 'x1' || dragTarget.part === 'x2') {
-            const side = dragTarget.part;
-            const status = side === 'x1' ? 'p1' : 'p2';
-            let prong = getNearestProng(mx, my);
-            
-            dragTarget.obj[side] = prong ? prong.x : mx;
-            dragTarget.obj[side === 'x1' ? 'y1' : 'y2'] = prong ? prong.y : my;
-            dragTarget.obj[status] = !!prong;
-        } else {
-            // Move whole body
-            dragTarget.obj.x1 = mx + dragTarget.ox1;
-            dragTarget.obj.y1 = my + dragTarget.oy1;
-            dragTarget.obj.x2 = mx + dragTarget.ox2;
-            dragTarget.obj.y2 = my + dragTarget.oy2;
-
-            // Auto-snap ends while moving body
-            let p1 = getNearestProng(dragTarget.obj.x1, dragTarget.obj.y1);
-            let p2 = getNearestProng(dragTarget.obj.x2, dragTarget.obj.y2);
-            if (p1) { dragTarget.obj.x1 = p1.x; dragTarget.obj.y1 = p1.y; dragTarget.obj.p1 = true; } else dragTarget.obj.p1 = false;
-            if (p2) { dragTarget.obj.x2 = p2.x; dragTarget.obj.y2 = p2.y; dragTarget.obj.p2 = true; } else dragTarget.obj.p2 = false;
-        }
-    };
-
-    canvas.onmouseup = () => dragTarget = null;
-    function clearLab() { components = []; uiOverlay.style.display = 'none'; if(deleteMode) toggleDeleteMode(); }
-    draw();
-</script>
-</body>
-</html>
+        else if (c.type === 'wire') {
+            ctx.
