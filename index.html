@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dynamic Breadboard Lab</title>
+    <title>Magnetic Breadboard Lab</title>
     <style>
         body { font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; background: #2c3e50; color: #ecf0f1; margin: 0; overflow: hidden; }
         #toolbar { background: #1a252f; padding: 15px; width: 100%; display: flex; gap: 12px; justify-content: center; border-bottom: 4px solid #34495e; z-index: 10; }
@@ -24,7 +24,7 @@
 </div>
 
 <canvas id="circuitCanvas" width="900" height="500"></canvas>
-<p class="hint">Drag <b>handles</b> to stretch/shorten. Drag the <b>center</b> to move. Red/Blue dots must touch the <b>grey prongs</b>.</p>
+<p class="hint">Terminals will <b>snap</b> to prongs when close. Green dots = Connected.</p>
 
 <script>
     const canvas = document.getElementById('circuitCanvas');
@@ -34,6 +34,7 @@
     let dragTarget = null;
     let currentFlow = 0;
     let eOffset = 0;
+    const SNAP_DIST = 20;
 
     // Create a grid of prongs
     const prongs = [];
@@ -45,28 +46,36 @@
     }
 
     function spawn(type) {
+        // Find a starting prong near center
         components.push({
             type,
-            x1: 400, y1: 240, // Left handle
-            x2: 520, y2: 240, // Right handle
+            x1: 400, y1: 240,
+            x2: 520, y2: 240,
             v: type === 'battery' ? 12 : 0,
             isOpen: type === 'switch' ? true : false,
-            active: false
+            p1: false, p2: false
         });
     }
 
-    function checkCircuit() {
-        // Find if a path exists between components via shared prongs
-        // Simplified: check if at least one battery and one bulb are touching common points
-        let hasPower = components.some(c => c.type === 'battery' && c.v > 0);
-        let hasBulb = components.some(c => c.type === 'bulb');
-        
-        // Check if terminals are aligned with prongs
-        components.forEach(c => {
-            c.p1 = prongs.some(p => Math.hypot(c.x1 - p.x, c.y1 - p.y) < 10);
-            c.p2 = prongs.some(p => Math.hypot(c.x2 - p.x, c.y2 - p.y) < 10);
+    // Helper to find nearest prong
+    function getNearestProng(x, y) {
+        let nearest = null;
+        let minDist = SNAP_DIST;
+        prongs.forEach(p => {
+            let d = Math.hypot(x - p.x, y - p.y);
+            if (d < minDist) {
+                minDist = d;
+                nearest = p;
+            }
         });
+        return nearest;
+    }
 
+    function checkCircuit() {
+        let hasPower = components.some(c => c.type === 'battery' && c.v > 0 && c.p1 && c.p2);
+        let hasBulb = components.some(c => c.type === 'bulb' && c.p1 && c.p2);
+        
+        // Simple connectivity check: are all components properly plugged in?
         const allConnected = components.every(c => c.p1 && c.p2);
         const swOpen = components.some(c => c.type === 'switch' && c.isOpen);
         
@@ -77,8 +86,8 @@
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         currentFlow = checkCircuit();
 
-        // 1. Draw Prongs (The background sockets)
-        ctx.fillStyle = "#95a5a6";
+        // 1. Draw Prongs
+        ctx.fillStyle = "#bdc3c7";
         prongs.forEach(p => {
             ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, Math.PI * 2); ctx.fill();
         });
@@ -94,28 +103,28 @@
             ctx.translate(c.x1, c.y1);
             ctx.rotate(angle);
 
-            // Draw component body based on stretched length
             if (c.type === 'wire') {
                 ctx.strokeStyle = currentFlow > 0 ? "#3498db" : "#34495e";
-                ctx.lineWidth = 8;
+                ctx.lineWidth = 10;
                 ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(dist, 0); ctx.stroke();
             } else {
-                // Body
                 ctx.fillStyle = (c.type === 'battery') ? "#2c3e50" : (c.type === 'bulb') ? "#bdc3c7" : "#7f8c8d";
-                ctx.fillRect(10, -15, dist - 20, 30);
+                ctx.fillRect(5, -15, dist - 10, 30);
                 
                 if (c.type === 'bulb' && currentFlow > 0) {
                     ctx.shadowBlur = 25; ctx.shadowColor = "yellow";
                     ctx.fillStyle = "#f1c40f";
-                    ctx.beginPath(); ctx.arc(dist/2, 0, 15, 0, 7); ctx.fill();
+                    ctx.beginPath(); ctx.arc(dist/2, 0, 18, 0, 7); ctx.fill();
                     ctx.shadowBlur = 0;
                 }
                 if (c.type === 'switch' && c.isOpen) {
                     ctx.strokeStyle = "#fff"; ctx.lineWidth = 4;
-                    ctx.beginPath(); ctx.moveTo(20, 0); ctx.lineTo(dist/2, -20); ctx.stroke();
+                    ctx.beginPath(); ctx.moveTo(20, 0); ctx.lineTo(dist/2, -22); ctx.stroke();
                 }
             }
             ctx.restore();
 
-            // Draw interactive terminals
-            ctx.fillStyle
+            // Terminal Indicators (Snap status)
+            ctx.fillStyle = c.p1 ? "#2ecc71" : "#e74c3c";
+            ctx.beginPath(); ctx.arc(c.x1, c.y1, 8, 0, 7); ctx.fill();
+            ctx.fillStyle = c
