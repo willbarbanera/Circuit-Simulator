@@ -2,17 +2,17 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Professional Physics Circuit Lab</title>
+    <title>Physics Lab: Realistic Circuits</title>
     <style>
         body { font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: white; margin: 0; display: flex; flex-direction: column; align-items: center; overflow: hidden; }
         #toolbar { background: #2c3e50; padding: 15px; width: 100%; display: flex; gap: 10px; justify-content: center; border-bottom: 4px solid #34495e; }
-        .btn { padding: 10px 15px; background: #34495e; border: 1px solid #555; color: white; cursor: pointer; border-radius: 4px; font-weight: bold; }
+        .btn { padding: 10px 15px; background: #34495e; border: 1px solid #555; color: white; cursor: pointer; border-radius: 4px; font-weight: bold; transition: 0.2s; }
         .btn:hover { background: #1abc9c; }
-        #canvas-container { position: relative; margin-top: 20px; }
-        canvas { background: #e0e0e0; border: 10px solid #7f8c8d; border-radius: 8px; cursor: crosshair; }
-        #inspect-panel { position: absolute; top: 80px; right: 20px; background: rgba(0,0,0,0.8); padding: 15px; border-radius: 8px; border: 2px solid #f1c40f; width: 200px; display: none; }
-        .meter-readout { font-family: 'Courier New', monospace; color: #0f0; background: #020; padding: 5px; border-radius: 4px; text-align: center; font-size: 1.2em; margin-top: 5px; }
+        .btn.active { background: #e74c3c; border-color: #ff7675; }
+        canvas { background: #dfe6e9; border: 10px solid #7f8c8d; border-radius: 8px; margin-top: 20px; cursor: crosshair; }
+        #inspect-panel { position: absolute; top: 80px; right: 20px; background: rgba(0,0,0,0.85); padding: 15px; border-radius: 8px; border: 2px solid #f1c40f; width: 210px; display: none; }
+        .meter-readout { font-family: 'Courier New', monospace; color: #0f0; background: #020; padding: 8px; border-radius: 4px; text-align: center; font-size: 1.1em; margin-top: 5px; border: 1px solid #050; }
+        .delete-overlay { color: #ff7675; font-weight: bold; font-size: 0.9em; margin-top: 10px; }
     </style>
 </head>
 <body>
@@ -23,28 +23,30 @@
     <button class="btn" onclick="spawn('resistor')">📟 Resistor</button>
     <button class="btn" onclick="spawn('switch')">🔌 Switch</button>
     <button class="btn" onclick="spawn('bulb')">💡 Bulb</button>
+    <button class="btn" id="delModeBtn" onclick="toggleDeleteMode()">🗑️ Delete Mode</button>
     <button class="btn" onclick="clearBoard()" style="background:#c0392b">Reset</button>
 </div>
 
-<div id="canvas-container">
-    <canvas id="labCanvas" width="1000" height="600"></canvas>
+<div style="position: relative;">
+    <canvas id="labCanvas" width="950" height="550"></canvas>
     
     <div id="inspect-panel">
         <strong id="item-name">Component</strong>
         <hr>
         <div id="battery-ctrl" style="display:none">
             Voltage: <span id="v-val">9</span>V
-            <input type="range" min="0" max="36" value="9" style="width:100%" oninput="updateProp('v', this.value)">
+            <input type="range" min="0" max="48" value="9" style="width:100%" oninput="updateProp('v', this.value)">
         </div>
         <div id="resistor-ctrl" style="display:none">
             Resistance: <span id="r-val">10</span>Ω
-            <input type="range" min="1" max="100" value="10" style="width:100%" oninput="updateProp('r', this.value)">
+            <input type="range" min="1" max="500" value="10" style="width:100%" oninput="updateProp('r', this.value)">
         </div>
         <div id="multimeter">
-            <p>Multimeter Readout:</p>
+            <p style="margin-bottom:5px">Readout:</p>
             <div class="meter-readout" id="m-volt">0.00 V</div>
             <div class="meter-readout" id="m-amp">0.00 A</div>
         </div>
+        <div class="delete-overlay" id="delHint" style="display:none">Hover to Delete!</div>
     </div>
 </div>
 
@@ -56,19 +58,27 @@
     let components = [];
     let dragData = null;
     let selected = null;
+    let delMode = false;
     let eOffset = 0;
     const PRONG_GAP = 50;
 
     function spawn(type) {
         const c = {
-            type,
-            x1: 100, y1: 100, x2: 250, y2: 100,
-            v: 9, r: (type === 'resistor' ? 10 : type === 'bulb' ? 5 : 0.1),
-            isOpen: false,
-            p1: false, p2: false
+            type, x1: 100, y1: 100, x2: 250, y2: 100,
+            v: type === 'battery' ? 12 : 0,
+            r: type === 'resistor' ? 20 : (type === 'bulb' ? 10 : 0.05),
+            isOpen: type === 'switch' ? true : false,
+            p1: false, p2: false, id: Math.random()
         };
         components.push(c);
         select(c);
+    }
+
+    function toggleDeleteMode() {
+        delMode = !delMode;
+        document.getElementById('delModeBtn').classList.toggle('active');
+        document.getElementById('delHint').style.display = delMode ? 'block' : 'none';
+        canvas.style.cursor = delMode ? 'no-drop' : 'crosshair';
     }
 
     function select(c) {
@@ -88,28 +98,38 @@
         if(prop === 'r') document.getElementById('r-val').innerText = val;
     }
 
+    // Logic to determine if a full loop exists
     function solveCircuit() {
-        let totalV = 0; let totalR = 0;
-        let hasPower = false; let closed = true;
+        if (components.length === 0) return { i: 0, v: 0 };
         
-        components.forEach(c => {
-            if(!c.p1 || !c.p2) closed = false;
-            if(c.type === 'switch' && c.isOpen) closed = false;
-            if(c.type === 'battery') { totalV += c.v; hasPower = true; }
-            totalR += c.r;
-        });
+        const nodes = new Map();
+        const battery = components.find(c => c.type === 'battery');
+        if (!battery || !battery.p1 || !battery.p2) return { i: 0, v: 0 };
 
-        if(!closed || !hasPower) return { i: 0, v: 0 };
-        const current = totalV / totalR;
-        return { i: current, v: totalV };
+        // Check for continuity and total resistance
+        let totalR = 0;
+        let circuitClosed = true;
+
+        for (let c of components) {
+            if (!c.p1 || !c.p2 || (c.type === 'switch' && c.isOpen)) {
+                circuitClosed = false;
+                break;
+            }
+            totalR += c.r;
+        }
+
+        if (!circuitClosed || totalR <= 0) return { i: 0, v: 0 };
+        
+        const current = battery.v / totalR;
+        return { i: current, v: battery.v };
     }
 
     function draw() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         const circuit = solveCircuit();
 
-        // Draw Grid Prongs
-        ctx.fillStyle = "#7f8c8d";
+        // Draw Board Prongs
+        ctx.fillStyle = "#b2bec3";
         for(let x=PRONG_GAP; x<canvas.width; x+=PRONG_GAP) {
             for(let y=PRONG_GAP; y<canvas.height; y+=PRONG_GAP) {
                 ctx.beginPath(); ctx.arc(x, y, 3, 0, 7); ctx.fill();
@@ -117,38 +137,38 @@
         }
 
         components.forEach(c => {
-            const dx = c.x2 - c.x1; const dy = c.y2 - c.y1;
-            const dist = Math.hypot(dx, dy); const ang = Math.atan2(dy, dx);
+            const dx = c.x2 - c.x1, dy = c.y2 - c.y1;
+            const dist = Math.hypot(dx, dy), ang = Math.atan2(dy, dx);
 
             ctx.save();
             ctx.translate(c.x1, c.y1);
             ctx.rotate(ang);
 
-            // Realistic Drawing logic
+            // High Fidelity Rendering
             if(c.type === 'wire') {
-                ctx.strokeStyle = '#34495e'; ctx.lineWidth = 6;
+                ctx.strokeStyle = circuit.i > 0 ? '#d63031' : '#636e72';
+                ctx.lineWidth = 8;
                 ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(dist, 0); ctx.stroke();
             } else if(c.type === 'battery') {
-                ctx.fillStyle = '#2c3e50'; ctx.fillRect(10, -20, dist-20, 40);
-                ctx.fillStyle = '#f1c40f'; ctx.fillRect(10, -20, (dist-20)*0.2, 40);
+                ctx.fillStyle = '#2d3436'; ctx.fillRect(10, -20, dist-20, 40);
+                ctx.fillStyle = '#f1c40f'; ctx.fillRect(10, -20, (dist-20)*0.25, 40);
             } else if(c.type === 'resistor') {
-                ctx.fillStyle = '#d2b48c'; ctx.fillRect(20, -12, dist-40, 24);
-                // Stripes
-                ctx.fillStyle = 'brown'; ctx.fillRect(30, -12, 5, 24);
-                ctx.fillStyle = 'red'; ctx.fillRect(50, -12, 5, 24);
+                ctx.fillStyle = '#fab1a0'; ctx.fillRect(20, -12, dist-40, 24);
+                ctx.fillStyle = '#636e72'; ctx.fillRect(35, -12, 6, 24);
+                ctx.fillStyle = '#d63031'; ctx.fillRect(55, -12, 6, 24);
             } else if(c.type === 'bulb') {
-                ctx.fillStyle = '#95a5a6'; ctx.fillRect(10, -10, dist-20, 20);
-                ctx.beginPath(); ctx.arc(dist/2, -5, 20, 0, 7);
+                ctx.fillStyle = '#b2bec3'; ctx.fillRect(15, -12, dist-30, 24);
+                ctx.beginPath(); ctx.arc(dist/2, -8, 22, 0, 7);
                 if(circuit.i > 0) {
-                    ctx.shadowBlur = circuit.i * 15; ctx.shadowColor = "yellow";
-                    ctx.fillStyle = `rgba(255, 255, 0, ${Math.min(circuit.i, 1)})`;
-                } else ctx.fillStyle = "rgba(255,255,255,0.3)";
-                ctx.fill(); ctx.stroke();
+                    ctx.shadowBlur = circuit.i * 20; ctx.shadowColor = "yellow";
+                    ctx.fillStyle = `rgba(255, 242, 0, ${Math.min(0.3 + circuit.i, 1)})`;
+                } else ctx.fillStyle = "rgba(255,255,255,0.4)";
+                ctx.fill(); ctx.stroke(); ctx.shadowBlur = 0;
             } else if(c.type === 'switch') {
-                ctx.fillStyle = '#333'; ctx.fillRect(10, -5, dist-20, 10);
-                ctx.strokeStyle = 'white'; ctx.lineWidth = 4;
-                ctx.beginPath(); ctx.moveTo(20, 0);
-                if(c.isOpen) ctx.lineTo(dist/2, -25); else ctx.lineTo(dist-20, 0);
+                ctx.fillStyle = '#2d3436'; ctx.fillRect(10, -6, dist-20, 12);
+                ctx.strokeStyle = '#dfe6e9'; ctx.lineWidth = 5;
+                ctx.beginPath(); ctx.moveTo(25, 0);
+                if(c.isOpen) ctx.lineTo(dist/2, -28); else ctx.lineTo(dist-25, 0);
                 ctx.stroke();
             }
             ctx.restore();
@@ -156,17 +176,17 @@
             // Electrons
             if(circuit.i > 0) {
                 ctx.fillStyle = "white";
-                for(let i=0; i<dist/20; i++) {
-                    let p = ((i/(dist/20)) + eOffset) % 1;
-                    ctx.beginPath(); ctx.arc(c.x1 + dx*p, c.y1 + dy*p, 3, 0, 7); ctx.fill();
+                for(let i=0; i<dist/25; i++) {
+                    let p = ((i/(dist/25)) + eOffset) % 1;
+                    ctx.beginPath(); ctx.arc(c.x1 + dx*p, c.y1 + dy*p, 3.5, 0, 7); ctx.fill();
                 }
             }
 
-            // Handles
-            ctx.fillStyle = c.p1 ? "#2ecc71" : "#e74c3c";
-            ctx.beginPath(); ctx.arc(c.x1, c.y1, 8, 0, 7); ctx.fill();
-            ctx.fillStyle = c.p2 ? "#2ecc71" : "#3498db";
-            ctx.beginPath(); ctx.arc(c.x2, c.y2, 8, 0, 7); ctx.fill();
+            // Magnetic Terminals
+            ctx.fillStyle = c.p1 ? "#00b894" : "#ff7675";
+            ctx.beginPath(); ctx.arc(c.x1, c.y1, 9, 0, 7); ctx.fill();
+            ctx.fillStyle = c.p2 ? "#00b894" : "#0984e3";
+            ctx.beginPath(); ctx.arc(c.x2, c.y2, 9, 0, 7); ctx.fill();
         });
 
         if(selected) {
@@ -178,8 +198,41 @@
         requestAnimationFrame(draw);
     }
 
+    canvas.onmousemove = (e) => {
+        const mx = e.offsetX, my = e.offsetY;
+
+        if (delMode) {
+            components = components.filter(c => {
+                let midX = (c.x1+c.x2)/2, midY = (c.y1+c.y2)/2;
+                return Math.hypot(mx-midX, my-midY) > 30;
+            });
+            return;
+        }
+
+        if(!dragData) return;
+        const c = dragData.c;
+        const snap = (v) => Math.round(v/PRONG_GAP)*PRONG_GAP;
+
+        if(dragData.p === 'x1') {
+            c.x1 = mx; c.y1 = my;
+            if(Math.hypot(mx-snap(mx), my-snap(my)) < 20) { c.x1 = snap(mx); c.y1 = snap(my); c.p1 = true; } 
+            else c.p1 = false;
+        } else if(dragData.p === 'x2') {
+            c.x2 = mx; c.y2 = my;
+            if(Math.hypot(mx-snap(mx), my-snap(my)) < 20) { c.x2 = snap(mx); c.y2 = snap(my); c.p2 = true; }
+            else c.p2 = false;
+        } else {
+            c.x1 = mx + dragData.dx1; c.y1 = my + dragData.dy1;
+            c.x2 = mx + dragData.dx2; c.y2 = my + dragData.dy2;
+            c.p1 = (c.x1 % PRONG_GAP === 0 && c.y1 % PRONG_GAP === 0);
+            c.p2 = (c.x2 % PRONG_GAP === 0 && c.y2 % PRONG_GAP === 0);
+        }
+    };
+
     canvas.onmousedown = (e) => {
         const mx = e.offsetX, my = e.offsetY;
+        if (delMode) return;
+        
         for(let c of components) {
             if(Math.hypot(mx-c.x1, my-c.y1) < 20) { dragData = {c, p:'x1'}; select(c); return; }
             if(Math.hypot(mx-c.x2, my-c.y2) < 20) { dragData = {c, p:'x2'}; select(c); return; }
@@ -192,33 +245,8 @@
         }
     };
 
-    canvas.onmousemove = (e) => {
-        if(!dragData) return;
-        const mx = e.offsetX, my = e.offsetY;
-        const c = dragData.c;
-        
-        const snap = (v) => Math.round(v/PRONG_GAP)*PRONG_GAP;
-
-        if(dragData.p === 'x1') {
-            c.x1 = mx; c.y1 = my;
-            if(Math.abs(mx - snap(mx)) < 15 && Math.abs(my - snap(my)) < 15) {
-                c.x1 = snap(mx); c.y1 = snap(my); c.p1 = true;
-            } else c.p1 = false;
-        } else if(dragData.p === 'x2') {
-            c.x2 = mx; c.y2 = my;
-            if(Math.abs(mx - snap(mx)) < 15 && Math.abs(my - snap(my)) < 15) {
-                c.x2 = snap(mx); c.y2 = snap(my); c.p2 = true;
-            } else c.p2 = false;
-        } else {
-            c.x1 = mx + dragData.dx1; c.y1 = my + dragData.dy1;
-            c.x2 = mx + dragData.dx2; c.y2 = my + dragData.dy2;
-            c.p1 = (c.x1 % PRONG_GAP === 0 && c.y1 % PRONG_GAP === 0);
-            c.p2 = (c.x2 % PRONG_GAP === 0 && c.y2 % PRONG_GAP === 0);
-        }
-    };
-
     canvas.onmouseup = () => dragData = null;
-    function clearBoard() { components = []; panel.style.display = 'none'; }
+    function clearBoard() { components = []; panel.style.display = 'none'; if(delMode) toggleDeleteMode(); }
     draw();
 </script>
 </body>
